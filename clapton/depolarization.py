@@ -6,7 +6,7 @@ class CliffordNoiseModel:
     # empty noise model
     def __init__(self):
         pass
-    def append_noise(self, circ, gate):
+    def append_noise(self, circ, gate, qb=None):
         # circ is stim circuit
         pass
 
@@ -44,6 +44,38 @@ class GateSpecificDepolarizationModel(DepolarizationModel):
             return None
         else:
             return self.params[gate_id].get(gate.qbs)
+
+
+class GateTypeSpecificDepolarizationModel(DepolarizationModel):
+    def __init__(
+            self, 
+            params = {} # dict[type, dict[tuple[int, int], dict[int, float | None]]] = {}
+        ):
+        self.params = params
+    def set_gate_depolarization(
+            self, 
+            gate_type: type,
+            qbs: tuple[int] | tuple[int,int],
+            p: float,
+            k: int | None = None
+        ):
+        if k is None:
+            ks = range(gate_type(*qbs).param_dim)
+        else:
+            ks = [k]
+        for k in ks:
+            if not gate_type in self.params:
+                self.params[gate_type] = {qbs: {k: p}}
+            else:
+                if not qbs in self.params[gate_type]:
+                    self.params[gate_type][qbs] = {k: p}
+                else:
+                    self.params[gate_type][qbs][k] = p
+    def get_gate_depolarization(self, gate):
+        try:
+            return self.params[type(gate)][gate.qbs][gate.k]
+        except:
+            return None
 
 
 class GateGeneralDepolarizationModel(DepolarizationModel):
@@ -124,6 +156,55 @@ class GateSpecificDecoherenceModel(DecoherenceModel):
         else:
             return self.params[gate_id]
         
+
+class GateTypeSpecificDecoherenceModel(DecoherenceModel):
+    def __init__(
+            self, 
+            T1: float | None = None,
+            T2: float | None = None,
+            params = {} # dict[type, dict[int, float | None]] = {}
+        ):
+        self.T1 = T1
+        self.T2 = T2
+        self.params = params
+    def set_gate_time(
+            self, 
+            gate_type: type,
+            time: float,
+            k: int | None = None
+        ):
+        if k is None:
+            # hacky way to take care of measurement
+            if gate_type == "MEAS":
+                ks = [0]
+            else:
+                # dirty to check if 1q or 2q gate- param_dim should be static
+                try:
+                    ks = range(gate_type(0).param_dim)
+                except:
+                    ks = range(gate_type(0, 0).param_dim)
+        else:
+            ks = [k]
+        for k in ks:
+            if not gate_type in self.params:
+                self.params[gate_type] = {k: time}
+            else:
+                self.params[gate_type][k] = time
+    def get_gate_time(self, gate):
+        if gate == "MEAS":
+            gate_type = "MEAS"
+            k = 0
+        else:
+            gate_type = type(gate)
+            k = gate.k
+        if not gate_type in self.params:
+            return 0.
+        else:
+            if k in self.params[gate_type]:
+                return self.params[gate_type][k]
+            else:
+                return 0.
+    
 
 class GateGeneralDecoherenceModel(DecoherenceModel):
     def __init__(
