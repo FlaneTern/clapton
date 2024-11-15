@@ -5,6 +5,7 @@ from clapton.clifford import ParametrizedCliffordCircuit
 from clapton.evaluation import transform_paulis, get_energy, weighted_relative_pauli_weight
 from clapton.utils import n_to_dits
 from clapton.mp_helpers import SignalHandler
+import csv
 
 
 ### Clapton
@@ -207,6 +208,8 @@ def claptonize(
         n_retry_rounds: int = 0,
         return_n_rounds: bool = False,
         mix_best_pop_frac: float = 0.2,
+        init_populations_infile: str | None = None,
+        init_populations_outfile: str | None = None,
         **optimizer_and_loss_kwargs
     ):
     sig_handler = SignalHandler()
@@ -221,7 +224,17 @@ def claptonize(
     n_proc = n_proc // n_starts
     if n_proc == 0:
         n_proc = 1
-    initial_populations = [None] * n_starts
+    
+    if init_populations_infile is not None:
+        with open(init_populations_infile, "r", newline="") as f:
+            reader = csv.reader(f)
+            rows = [list(map(int, row)) for row in reader]
+        assert len(rows) % n_starts == 0
+        best_count = len(rows) // n_starts
+        initial_populations = [np.asarray(rows[m*best_count:(m+1)*best_count]) for m in range(n_starts)]
+    else:
+        initial_populations = [None] * n_starts  
+
     out_data = [-1, [np.inf]*3, None]
     optimizer_and_loss_kwargs["n_proc"] = n_proc
     optimizer_and_loss_kwargs["return_best_pop_frac"] = mix_best_pop_frac
@@ -252,7 +265,7 @@ def claptonize(
             master_processes.append(master_process)
             master_process.start()
 
-        # this is also a master process
+        # this is aso a master process
         optimizer_and_loss_kwargs["initial_population"] = initial_populations[0]
         xs, losses = genetic_algorithm(
             paulis,
@@ -279,6 +292,13 @@ def claptonize(
         for i in range(n_starts):
             idc = rand_shuffled_idc[i*best_count:(i+1)*best_count]
             initial_populations[i] = xs[idc]
+
+        # quickly save populations
+        if init_populations_outfile is not None:
+            with open(init_populations_outfile, "w", newline="") as f:
+                writer = csv.writer(f)
+                for m in range(n_starts):
+                    writer.writerows(np.asarray(initial_populations[m]))
 
         best_idx = np.argmin(losses)
         x_best = xs[best_idx]
