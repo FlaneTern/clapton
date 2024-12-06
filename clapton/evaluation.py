@@ -1,6 +1,7 @@
 import numpy as np
 import stim
 from clapton.clifford import ParametrizedCliffordCircuit
+import random
 
 ### Transformation
 def transform_paulis(
@@ -45,27 +46,47 @@ def get_expectations(
         base_pcirc: ParametrizedCliffordCircuit, 
         paulis: list[str], 
         get_noiseless: bool = False, 
-        shots: int = int(1e4)
+        shots: int = int(1e4),
     ):
-    if get_noiseless:
+    if get_noiseless:   
         return get_expectations_tableau(base_pcirc, paulis)
     if base_pcirc.has_errors():
-        # use hidden routines for speedup (build main part of stim circ only once)
-        if base_pcirc.circ_snapshot is None:
-            base_pcirc.snapshot()
-        base_circ = base_pcirc.circ_snapshot
-        def _num_true(pauli):
-            circ = base_circ.copy()
-            base_pcirc._add_measurements(circ, pauli)
-            sampler = circ.compile_sampler()
-            results = sampler.sample(shots)
-            return np.sum(results)
-        num_trues = np.fromiter((_num_true(pauli) for pauli in paulis), float, len(paulis))
-        expectations = 1 - num_trues/shots * 2
+        if base_pcirc.pauli_twirl_list is not None:
+            pauli_twirl_list = base_pcirc.pauli_twirl_list
+            def _num_true(pauli):
+                res = []
+                for _ in range(len(pauli_twirl_list)):  
+                    # Randomly select a circuit from the list of twirled circs
+                    twirled_pcirc = random.choice(pauli_twirl_list)
+                    if twirled_pcirc.circ_snapshot is None:
+                        twirled_pcirc.snapshot()
+                    twirled_circ = twirled_pcirc.circ_snapshot
+                    circ = twirled_circ.copy()
+                    twirled_pcirc._add_measurements(circ, pauli)
+                    sampler = circ.compile_sampler()
+                    results = sampler.sample(shots)
+                    summed = np.sum(results)
+                    res.append(summed) #TODO: Maybe we should do a different way?
+                return round(np.average(res))
+            num_trues = np.fromiter((_num_true(pauli) for pauli in paulis), float, len(paulis))
+            expectations = 1 - num_trues/shots * 2
+
+        else :
+            # use hidden routines for speedup (build main part of stim circ only once)
+            if base_pcirc.circ_snapshot is None:
+                base_pcirc.snapshot()
+            base_circ = base_pcirc.circ_snapshot #this is stim circ
+            def _num_true(pauli):   
+                circ = base_circ.copy()
+                base_pcirc._add_measurements(circ, pauli) #this takes stim circuit and adds pauli meas. in the end, but uses noise model in the base circ
+                sampler = circ.compile_sampler()
+                results = sampler.sample(shots)
+                return np.sum(results)
+            num_trues = np.fromiter((_num_true(pauli) for pauli in paulis), float, len(paulis))
+            expectations = 1 - num_trues/shots * 2
     else:
         expectations = get_expectations_tableau(base_pcirc, paulis)
     return expectations
-
 
 def get_energy(
         pcirc: ParametrizedCliffordCircuit, 

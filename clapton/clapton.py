@@ -15,18 +15,24 @@ def loss_func(
         vqe_pcirc: ParametrizedCliffordCircuit, 
         trans_pcirc: ParametrizedCliffordCircuit | None = None, 
         alpha: float | None = None, 
-        return_sublosses: bool = False, 
+        return_sublosses: bool = False,
         **energy_kwargs
     ):
     if trans_pcirc is None:
-        vqe_pcirc.assign(x)
-        vqe_pcirc.snapshot()
-        vqe_pcirc.snapshot_noiseless()
+
+        if vqe_pcirc.pauli_twirl_list is not None:
+            for circuit in vqe_pcirc.pauli_twirl_list:
+                circuit.assign(x)
+        else:
+            vqe_pcirc.assign(x) 
+
+        # vqe_pcirc.snapshot()
+        # vqe_pcirc.snapshot_noiseless()
         energy = get_energy(
                     vqe_pcirc, 
                     paulis, 
                     coeffs, 
-                    **energy_kwargs
+                    **energy_kwargs,
                     )
         energy_noiseless = get_energy(
                             vqe_pcirc, 
@@ -38,7 +44,7 @@ def loss_func(
         pauli_weight_loss = 0.
         loss = energy + energy_noiseless
     else:
-        trans_circ = trans_pcirc.assign(x).stim_circuit()
+        trans_circ = trans_pcirc.assign(x).stim_circuit() #TODO:
         paulis_trans, signs = transform_paulis(trans_circ, paulis)
         coeffs_trans = np.multiply(signs, coeffs)
         # assume vqe_pcirc has stim circuit snapshot with all 0 parameters
@@ -92,7 +98,7 @@ def eval_xs_terms(
             coeffs[idx1:idx2+1], 
             vqe_pcirc,
             trans_pcirc,
-            **loss_kwargs
+            **loss_kwargs,
             ))
         idx1 = 0
     idx2 = p_end_idx
@@ -290,7 +296,7 @@ def claptonize(
                                                 vqe_pcirc, 
                                                 trans_pcirc,
                                                 alpha=optimizer_and_loss_kwargs.get("alpha"),
-                                                return_sublosses=True
+                                                return_sublosses=True,
                                                 )
 
         if n_rounds is None:
@@ -362,7 +368,7 @@ def genetic_algorithm(
     def fitness_func(ga_instance, solutions, solutions_idc):
         return -eval_xs_terms_mp(
             solutions, 
-            paulis,
+            paulis, 
             coeffs,
             vqe_pcirc,
             trans_pcirc,
@@ -386,7 +392,8 @@ def genetic_algorithm(
                     crossover_probability=crossover_probability,
                     mutation_probability=mutation_probability,
                     keep_elitism=keep_elitism,
-                    fitness_batch_size=population_size
+                    fitness_batch_size=population_size,
+                    random_seed=0,
                     )
     if initial_population is not None:
         initial_population = np.asarray(initial_population)

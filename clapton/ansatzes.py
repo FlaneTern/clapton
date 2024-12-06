@@ -72,7 +72,7 @@ def circular_ansatz_mirrored(N, reps=1, fix_2q=False):
     for i in range(N):
         pcirc.RY(i)
     for i in range(N):
-        pcirc.RZ(i)
+        pcirc.RZ(i) 
     return pcirc  
 
 
