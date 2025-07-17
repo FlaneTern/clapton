@@ -28,3 +28,37 @@ def dits_to_n(x, dims):
     if len(x) < len(dims):
         x = np.concatenate(np.zeros(len(dims) - len(x)), x)
     return np.cumprod(dims[-1:0:-1]) @ x[-2::-1] + x[-1]
+
+
+class Results:
+    def __init__(self, name):
+        self.name = name
+        
+        self.hamiltonian_strings = []
+        self.paulis = []
+        self.pauli_coeffs = []
+        
+        self.times = []
+        self.ks_bests = []
+        self.energy_bests = []
+        
+    def add_result(self, hamiltonian_string, pauli, pauli_coeff, time, ks_best, energy_best):
+        self.hamiltonian_strings += [hamiltonian_string]
+        self.paulis += [pauli]
+        self.pauli_coeffs += [pauli_coeff]
+        
+        self.times += [time]
+        self.ks_bests += [ks_best]
+        self.energy_bests += [energy_best]
+        
+    def __str__(self):
+        return (
+            f"Name: {self.name}\n"
+            f"  Hamiltonian: {self.hamiltonian_strings}\n"
+            f"  Paulis: {self.paulis}\n"
+            f"  Pauli Coefficients: {self.pauli_coeffs}\n"
+            f"  Optimization History:\n"
+            f"    Time: {self.times}\n"
+            f"    Best ks: {self.ks_bests if self.ks_bests else 'N/A'}\n"
+            f"    Best Energy: {self.energy_bests}" if self.energy_bests else "    Best Energy: N/A"
+        )

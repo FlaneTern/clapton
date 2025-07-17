@@ -10,7 +10,9 @@ from gurobipy import Model, GRB, quicksum
 import optuna
 from optuna.samplers import TPESampler, RandomSampler, GridSampler, CmaEsSampler, QMCSampler, GPSampler
 from optuna.pruners import MedianPruner
+import logging
 
+optuna.logging.set_verbosity(logging.WARNING)  # or logging.ERROR to suppress even more
 
 ### Clapton
 def loss_func(
@@ -416,230 +418,7 @@ def genetic_algorithm(
     else:
         master_queue.put((master_id, best_xs, best_losses))
         
-        
-        
 def claptonize_opt(
-        paulis: list[str],
-        coeffs: list[float],
-        vqe_pcirc: ParametrizedCliffordCircuit,
-        trans_pcirc: ParametrizedCliffordCircuit | None = None,
-        n_proc: int = 10,
-        n_starts: int = 10,
-        n_rounds: int | None =None,
-        n_retry_rounds: int = 0,
-        return_n_rounds: bool = False,
-        mix_best_pop_frac: float = 0.2,
-        **optimizer_and_loss_kwargs
-    ):
-    sig_handler = SignalHandler()
-
-    assert vqe_pcirc.num_physical_qubits == len(paulis[0])
-    if trans_pcirc is not None:
-        assert trans_pcirc.num_physical_qubits == len(paulis[0])
-        # take snapshot for more efficient sim in cost function (is initialized to params all 0)
-        vqe_pcirc.snapshot()
-        vqe_pcirc.snapshot_noiseless()
-    
-    n_proc = n_proc // n_starts
-    if n_proc == 0:
-        n_proc = 1
-    initial_populations = [None] * n_starts
-    out_data = [-1, [np.inf]*3, None]
-    optimizer_and_loss_kwargs["n_proc"] = n_proc
-    optimizer_and_loss_kwargs["return_best_pop_frac"] = mix_best_pop_frac
-    optimizer_and_loss_kwargs["out_data"] = out_data
-    
-    r_idx = 0
-    r_idx_last_change = 0
-    last_best_energy_ideal = np.inf
-
-    # this is also a master process
-    optimizer_and_loss_kwargs["initial_population"] = initial_populations[0]
-    xs, losses = gurobi_optimizer(
-        paulis,
-        coeffs,
-        vqe_pcirc,
-        trans_pcirc,
-        **optimizer_and_loss_kwargs
-    )
-    # best_count = len(xs)
-    print("HEREEEEE4")
-    
-
-    x_best = xs
-    
-    print(x_best)
-    
-
-    _, energy_noisy, energy_ideal, _ = loss_func(
-                                            x_best, 
-                                            paulis, 
-                                            coeffs, 
-                                            vqe_pcirc, 
-                                            trans_pcirc,
-                                            alpha=optimizer_and_loss_kwargs.get("alpha"),
-                                            return_sublosses=True
-                                            )
-
-    # if return_n_rounds:
-    #     return list(x_best), energy_noisy, energy_ideal, r_idx
-    # else:
-    #     return list(x_best), energy_noisy, energy_ideal
-    
-    return x_best, energy_noisy, energy_ideal
-    
-
-
-def gurobi_optimizer(
-        paulis: list[str], 
-        coeffs: list[str],
-        vqe_pcirc: ParametrizedCliffordCircuit,
-        trans_pcirc: ParametrizedCliffordCircuit | None,
-        master_queue=None,
-        master_id=None,
-        out_data=None,
-        return_best_pop_frac=0.2,
-        initial_population=None,
-        **loss_kwargs
-    ):
-    print(f"Started Gurobi optimizer at ID {master_id}")
-
-    if trans_pcirc is None:
-        gene_space = vqe_pcirc.parameter_space()
-        idc_param_2qb = vqe_pcirc.idc_param_2qb()
-    else:
-        gene_space = trans_pcirc.parameter_space()
-        idc_param_2qb = trans_pcirc.idc_param_2qb()
-    num_params = len(gene_space)
-
-    def fitness_func(ga_instance, solutions, solutions_idc):
-        return -eval_xs_terms_mp(
-            solutions, 
-            paulis,
-            coeffs,
-            vqe_pcirc,
-            trans_pcirc,
-            out_data=out_data,
-            **loss_kwargs
-            )
-        
-        
-    print("HEREEEEE")
-    print(gene_space)
-    # gene_space = trans_pcirc.parameter_space() if trans_pcirc else vqe_pcirc.parameter_space()
-    # num_params = len(gene_space)
-    param_choices = [np.unique(col).astype(int) for col in np.array(gene_space).T]
-    param_choices = gene_space
-    print(param_choices)
-
-    # Gurobi model
-    model = Model("CliffordVQE")
-    model.setParam("OutputFlag", 0)
-
-    x_vars = []
-    for i, choices in enumerate(param_choices):
-        vars_i = {}
-        for j, val in enumerate(choices):
-            vars_i[val] = model.addVar(vtype=GRB.BINARY, name=f"x_{i}_{val}")
-        # one-hot constraint
-        model.addConstr(sum(vars_i.values()) == 1)
-        x_vars.append(vars_i)
-
-    print("HEREEEEE2")
-    model.update()
-    print("HEREEEEE3")
-
-    # # Enumerate all feasible combinations (can be optimized using callbacks or branch-and-bound)
-    # from itertools import product
-    # search_space = list(product(*[list(v.keys()) for v in x_vars]))
-    # print("HEREEEEE5")
-    
-    # # Evaluate all and select best
-    # best_x = None
-    # best_val = float("inf")
-    # all_xs = []
-    # all_vals = []
-
-    # for x in search_space:
-    #     x_list = list(x)
-    #     val = loss_func(
-    #         x_list, paulis, coeffs, vqe_pcirc, trans_pcirc,
-    #         alpha=loss_kwargs.get("alpha"), return_sublosses=False
-    #     )
-    #     all_xs.append(x_list)
-    #     all_vals.append(val)
-    #     if val < best_val:
-    #         best_val = val
-    #         best_x = x_list
-    # print("HEREEEEE6")
-
-    # # Sort and return best fraction
-    # all_xs = np.array(all_xs)
-    # all_vals = np.array(all_vals)
-    # best_idx = np.argsort(all_vals)[:int(len(all_vals)*return_best_pop_frac)]
-    # print("HEREEEEE7")
-    # if master_queue is None:
-    #     return all_xs[best_idx], all_vals[best_idx]
-    # else:
-    #     master_queue.put((master_id, all_xs[best_idx], all_vals[best_idx]))
-
-    model.update()
-
-    # Fake objective: just sum vars (will be overridden in callback)
-    fake_obj = quicksum(x_vars[i][val] for i, choices in enumerate(param_choices) for val in choices)
-    model.setObjective(fake_obj, GRB.MINIMIZE)
-
-    cb = VQEGurobiCallback(x_vars, param_choices, paulis, coeffs, vqe_pcirc, trans_pcirc, loss_kwargs)
-    model.optimize(cb)
-    
-    if model.status == GRB.OPTIMAL or cb.best_x is not None:
-        print(f"best_x: {cb.best_x}")
-        return cb.best_x, np.array(cb.best_val)
-    else:
-        raise RuntimeError("Gurobi failed to find a feasible solution.")
-
-
-class VQEGurobiCallback:
-    def __init__(self, x_vars, param_choices, paulis, coeffs, vqe_pcirc, trans_pcirc, loss_kwargs):
-        self.x_vars = x_vars
-        self.param_choices = param_choices
-        self.paulis = paulis
-        self.coeffs = coeffs
-        self.vqe_pcirc = vqe_pcirc
-        self.trans_pcirc = trans_pcirc
-        self.loss_kwargs = loss_kwargs
-        self.best_val = float("inf")
-        self.best_x = None
-
-    def __call__(self, model, where):
-        if where == GRB.Callback.MIPSOL:
-            x_sol = []
-            for i, choices in enumerate(self.param_choices):
-                for val in choices:
-                    var = self.x_vars[i][val]
-                    if model.cbGetSolution(var) > 0.5:
-                        x_sol.append(val)
-                        break
-            energy = loss_func(
-                x_sol, self.paulis, self.coeffs, self.vqe_pcirc,
-                self.trans_pcirc, alpha=self.loss_kwargs.get("alpha"),
-                return_sublosses=False
-            )
-            if energy < self.best_val:
-                self.best_val = energy
-                self.best_x = x_sol
-                print(f"[Gurobi] New best: {energy:.6f} at {x_sol}")
-            # Update best known solution as heuristic objective
-            model.cbSetSolution(
-                [self.x_vars[i][x_sol[i]] for i in range(len(x_sol))],
-                [1.0] * len(x_sol)
-            )
-            
-            
-            
-
-
-def claptonize_opt2(
         paulis: list[str],
         coeffs: list[float],
         vqe_pcirc: ParametrizedCliffordCircuit,
@@ -661,43 +440,21 @@ def claptonize_opt2(
         idc_param_2qb = trans_pcirc.idc_param_2qb()
     
     def objective(trial):
-    # Define x_sol using integer search space (gene_space)
+    # Assume gene_space is a list of lists or ranges, e.g. [[0,1,2], [0,1], [0,1,2,3], ...]
         x_sol = [
             trial.suggest_int(f"x{i}", min(xs_), max(xs_))
             for i, xs_ in enumerate(gene_space)
         ]
 
-        total_steps = 10  # or however many "stages" your loss function can return intermediate results for
-
-        for step in range(total_steps):
-            # Optional: you can adapt this to slice part of your circuit/data at each step
-            energy = loss_func(
-                x_sol, paulis, coeffs, vqe_pcirc,
-                trans_pcirc,
-                alpha=optimizer_and_loss_kwargs.get("alpha"),
-                return_sublosses=False
-            )
-
-            # Report to Optuna
-            trial.report(energy, step)
-
-            # Check for early stopping
-            if trial.should_prune():
-                raise optuna.TrialPruned()
-
+        energy = loss_func(
+            x_sol, paulis, coeffs, vqe_pcirc,
+            trans_pcirc, alpha=optimizer_and_loss_kwargs.get("alpha"),
+            return_sublosses=False
+        )
         return energy
 
 
-    sampler = TPESampler(seed=42)
-    pruner = MedianPruner(
-        n_startup_trials=100,  # wait for at least 10 full trials
-        n_warmup_steps=20,     # allow 2 steps before pruning is active
-        interval_steps=10      # check pruning every step
-    )
-
-
-    study = optuna.create_study(direction="minimize", sampler=sampler, pruner=pruner)
-    study.optimize(objective, n_trials=1000000000)
+    study = run_study_with_custom_stopping(objective, 100, 100, "minimize")
     
     x_best = [study.best_params[f"x{i}"] for i in range(len(gene_space))]
 
@@ -712,3 +469,28 @@ def claptonize_opt2(
                                             )
 
     return x_best, energy_noisy, energy_ideal
+
+
+def run_study_with_custom_stopping(objective, min_trials=100, early_stopping_trials=100, direction="minimize"):
+    sampler = TPESampler(seed=42)
+    study = optuna.create_study(direction=direction, sampler=sampler)
+    
+    best_value = None
+    no_improvement_counter = 0
+
+    for i in range(1000000000000000):  # max limit
+        study.optimize(objective, n_trials=1, catch=(Exception,))
+
+        trial_value = study.best_value
+        if best_value is None or trial_value < best_value:
+            best_value = trial_value
+            no_improvement_counter = 0
+        else:
+            no_improvement_counter += 1
+
+        # Check custom stopping condition
+        if i + 1 >= min_trials and no_improvement_counter >= early_stopping_trials:
+            # print(f"Early stopping triggered: no improvement in last {early_stopping_trials} trials")
+            break
+
+    return study
