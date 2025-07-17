@@ -454,7 +454,7 @@ def claptonize_opt(
         return energy
 
 
-    study = run_study_with_custom_stopping(objective, 100, 100, "minimize")
+    study = run_study_with_custom_stopping(objective, 1000, 1000, "minimize")
     
     x_best = [study.best_params[f"x{i}"] for i in range(len(gene_space))]
 
@@ -472,7 +472,7 @@ def claptonize_opt(
 
 
 def run_study_with_custom_stopping(objective, min_trials=100, early_stopping_trials=100, direction="minimize"):
-    sampler = TPESampler(seed=42)
+    sampler = QMCSampler(seed=42)
     study = optuna.create_study(direction=direction, sampler=sampler)
     
     best_value = None

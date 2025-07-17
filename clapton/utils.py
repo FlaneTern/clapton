@@ -37,6 +37,7 @@ class Results:
         self.hamiltonian_strings = []
         self.paulis = []
         self.pauli_coeffs = []
+        self.bond_lengths = []
         
         self.times = []
         self.ks_bests = []
@@ -46,6 +47,7 @@ class Results:
         self.hamiltonian_strings += [hamiltonian_string]
         self.paulis += [pauli]
         self.pauli_coeffs += [pauli_coeff]
+        self.bond_lengths += [float(hamiltonian_string.split(" ")[-1])]
         
         self.times += [time]
         self.ks_bests += [ks_best]
